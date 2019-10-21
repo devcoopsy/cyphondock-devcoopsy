@@ -1,0 +1,63 @@
+# Development overrides that will:
+# 
+#    - map container ports to random ports on the host machine
+#
+
+version: '2.1'
+
+services:
+
+  celerybeat:
+    extends:
+      file: common-services.yml
+      service: cyphon-dev
+
+  celeryworker:
+    extends:
+      file: common-services.yml
+      service: cyphon-dev
+
+  cyphon:
+    extends:
+      file: common-services.yml
+      service: cyphon-dev
+    environment:
+      CYPHON_SUPERUSER: "YES"
+      LOAD_EXAMPLE_FIXTURES: "YES"
+    ports:
+      - "8000"
+
+  kibana:
+    ports:
+      - "5601"
+
+  logstash:
+    ports:
+      - "5044"
+      - "5045"
+
+  nginx:
+    ports:
+      - "80"     # Cyphon
+      - "443"    # Cyphon
+      - "5601"   # Kibana
+      - "15672"  # RabbitMQ management plugin
+
+  rabbit:
+    ports:
+      - "15672"  # RabbitMQ management plugin
+
+  logchutes:
+    extends:
+      file: common-services.yml
+      service: cyphon-dev
+
+  monitors:
+    extends:
+      file: common-services.yml
+      service: cyphon-dev
+
+  watchdogs:
+    extends:
+      file: common-services.yml
+      service: cyphon-dev

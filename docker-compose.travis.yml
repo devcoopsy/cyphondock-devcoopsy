@@ -1,0 +1,238 @@
+# Creates a stack for testing on Travis-CI.
+
+version: '2.1'
+
+services:
+
+  celerybeat:
+    extends:
+      file: common-services.yml
+      service: cyphon-test
+    command: ../entrypoints/run_celerybeat.sh
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  celeryworker:
+    extends:
+      file: common-services.yml
+      service: cyphon-test
+    command: ../entrypoints/run_celeryworker.sh
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  cyphon:
+    extends:
+      file: common-services.yml
+      service: cyphon-test
+    environment:
+      - CYPHON_SUPERUSER=YES
+      - FUNCTIONAL_TESTS_DRIVER=docker
+      - SAUCE_USERNAME
+      - SAUCE_ACCESS_KEY
+      - TRAVIS_JOB_NUMBER
+      - TRAVIS_BUILD_NUMBER
+      - TRAVIS_PYTHON_VERSION
+      - TWITTER_ACCESS_TOKEN
+      - TWITTER_KEY
+      - TWITTER_SECRET
+      - TWITTER_TOKEN_SECRET
+    volumes_from:
+      - geoip
+    links:
+      # - saucelabs
+      - elasticsearch
+      - geoip
+      - mongo
+      - postgres
+      - selenium
+    depends_on:
+      elasticsearch:
+        condition: service_started
+      geoip:
+        condition: service_started
+      mongo:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./config-COPYME/cyphon/fixtures:/usr/src/app/cyphon/fixtures:ro
+    ports:
+      - "8001:8001"
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VER}
+    restart: always
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=127.0.0.1
+    volumes:
+      - ./config-COPYME/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - ./config-COPYME/elasticsearch/jvm.options:/usr/share/elasticsearch/config/jvm.options:ro
+      - ./config-COPYME/elasticsearch/log4j2.properties:/usr/share/elasticsearch/config/log4j2.properties:ro
+
+  geoip:
+    image: dunbar/geoip:${GEOIP_VER}
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VER}
+    restart: always
+    env_file:
+      - ./config-COPYME/env/cyphon.env
+    environment:
+      LOGSPOUT: ignore  # don't send Kibana's logs to Logspout
+    links:
+      - elasticsearch
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./config-COPYME/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+
+  logspout:
+    image: gliderlabs/logspout:${LOGSPOUT_VER}
+    restart: always
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: syslog://logstash:5000
+    links:
+      - logstash
+    depends_on:
+      - logstash
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:${ELASTIC_VER}
+    restart: always
+    command: logstash -f /etc/logstash/conf.d --config.reload.automatic --log.level error
+    expose:
+      - "5000/udp"
+    ports:
+      - "5044:5044"
+      - "5045:5045"
+      - "9200:9200"
+    volumes:
+      - ./config-COPYME/logstash/pipeline:/etc/logstash/conf.d:ro
+      - ./config-COPYME/logstash/config:/usr/share/logstash/config:ro
+      - ./config-COPYME/logstash/patterns:/usr/share/logstash/patterns:ro
+    links:
+      - elasticsearch
+      - rabbit
+
+  mongo:
+    image: mongo:${MONGODB_VER}
+    restart: always
+    env_file:
+      - ./config-COPYME/env/cyphon.env
+
+  nginx:
+    image: nginx:${NGINX_VER}
+    restart: always
+    ports:
+      - "80:80"        # Cyphon
+      - "443:443"      # Cyphon
+      - "5601:5601"    # Kibana
+      - "15672:15672"  # RabbitMQ management plugin
+    volumes:
+      - ./config-COPYME/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /www/static
+    volumes_from:
+      - cyphon
+    links:
+      - cyphon
+      - kibana
+      - rabbit
+      - selenium
+    depends_on:
+      - cyphon
+      - selenium
+
+  rabbit:
+    image: rabbitmq:${RABBITMQ_VER}
+    restart: always
+    env_file:
+      - ./config-COPYME/env/cyphon.env
+
+  postgres:
+    image: mdillon/postgis:${POSTGRES_VER}
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    env_file:
+      - ./config-COPYME/env/cyphon.env
+    ports:
+      - "5433:5432"
+
+  logchutes:
+    extends:
+      file: common-services.yml
+      service: cyphon-test
+    command: ../entrypoints/run_receiver.sh logchutes
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  monitors:
+    extends:
+      file: common-services.yml
+      service: cyphon-test
+    command: ../entrypoints/run_receiver.sh monitors
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  watchdogs:
+    extends:
+      file: common-services.yml
+      service: cyphon-test
+    command: ../entrypoints/run_receiver.sh watchdogs
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  selenium:
+    image: selenium/standalone-chrome:${SELENIUM_VER}
+    ports:
+      - "4444:4444"
+
+# networks:
+#   default:
+#     external:
+#       name: bridge

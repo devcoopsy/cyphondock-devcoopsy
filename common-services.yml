@@ -1,0 +1,61 @@
+# Defines development and production services for Cyphon Engine.
+# Expects a config directory to contain customized versions of:
+#
+#   - base.py
+#   - conf.py
+#   - dev.py
+#   - prod.py
+#
+# Example files can be found in the cyphon.settings package.
+
+version: '2.1'
+
+services:
+
+  cyphon-dev:
+    build: ../cyphon
+    restart: always
+    env_file:
+      - ./config/env/cyphon.env
+    environment:
+      CYPHON_ENV: DEV
+      DJANGO_SETTINGS_MODULE: cyphon.settings.dev
+    volumes:
+      - ../cyphon/cyphon:/usr/src/app/cyphon
+      - ../cyphon/entrypoints:/usr/src/app/entrypoints
+      - ./config/cyphon/custom:/usr/src/app/cyphon/custom
+      - ./config/cyphon/settings:/usr/src/app/cyphon/cyphon/settings
+      - ./config/cyphon/fixtures:/usr/src/app/cyphon/fixtures
+
+  cyphon-prod:
+    image: controlscanmdr/cyphon:${CYPHON_VER}
+    restart: always
+    env_file:
+      - ./config/env/cyphon.env
+    environment:
+      CYPHON_ENV: PROD
+      DJANGO_SETTINGS_MODULE: cyphon.settings.prod
+    volumes:
+      - ../media:/usr/src/app/media
+      - ../keys:/usr/src/app/keys
+      - ./config/cyphon/custom:/usr/src/app/cyphon/custom
+      - ./config/cyphon/settings:/usr/src/app/cyphon/cyphon/settings
+      - ./config/cyphon/fixtures:/usr/src/app/cyphon/fixtures
+
+  cyphon-test:
+    image: controlscanmdr/cyphon:${CYPHON_VER}
+    env_file:
+      - ./config-COPYME/env/cyphon.env
+    environment:
+      CYPHON_ENV: PROD
+      DJANGO_SETTINGS_MODULE: cyphon.settings.prod
+      DJANGO_LIVE_TEST_SERVER_ADDRESS: cyphon:8081-8100
+      FUNCTIONAL_TESTS_ENABLED: ${FUNCTIONAL_TESTS_ENABLED}
+      FUNCTIONAL_TESTS_DRIVER: docker
+      FUNCTIONAL_TESTS_HOST: selenium
+      FUNCTIONAL_TESTS_PORT: 4444
+      FUNCTIONAL_TESTS_BROWSER: chrome
+    volumes:
+      - ./config-COPYME/cyphon/custom:/usr/src/app/cyphon/custom
+      - ./config-COPYME/cyphon/settings:/usr/src/app/cyphon/cyphon/settings
+      - ./config-COPYME/cyphon/fixtures:/usr/src/app/cyphon/fixtures

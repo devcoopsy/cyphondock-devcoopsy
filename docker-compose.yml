@@ -1,0 +1,207 @@
+version: '2.1'
+
+services:
+
+  # Celery beat for Cyphon
+  celerybeat:
+    extends:
+      file: common-services.yml
+      service: cyphon-prod
+    restart: always
+    command: ../entrypoints/run_celerybeat.sh
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      # - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  # Celery worker for Cyphon
+  celeryworker:
+    extends:
+      file: common-services.yml
+      service: cyphon-prod
+    restart: always
+    command: ../entrypoints/run_celeryworker.sh
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      # - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  # Cyphon Engine
+  cyphon:
+    extends:
+      file: common-services.yml
+      service: cyphon-prod
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      # - mongo
+      - postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Elasticsearch storage backend
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ELASTIC_VER}
+    restart: always
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=127.0.0.1
+    volumes:
+      - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
+      - ./config/elasticsearch/jvm.options:/usr/share/elasticsearch/config/jvm.options:ro
+      - ./config/elasticsearch/log4j2.properties:/usr/share/elasticsearch/config/log4j2.properties:ro
+    expose:
+      - "9200"
+
+  filebeat:
+     image: docker.elastic.co/beats/filebeat:${ELASTIC_VER}
+     restart: always
+     links:
+       - logstash
+     depends_on:
+       - logstash
+     volumes:
+       - ./config/beats/filebeat/filebeat.yml:/usr/share/filebeat/filebeat.yml:rw
+       - ./log:/var/log
+       - ./export.json:/usr/share/filebeat/export.json:rw
+
+  # GeoLite2 databases for geolocating IP addresses
+  geoip:
+    image: controlscanmdr/geoip
+    restart: always
+
+  # Kibana dashboard for Elasticsearch data
+  kibana:
+    image: docker.elastic.co/kibana/kibana:${ELASTIC_VER}
+    restart: always
+    environment:
+      LOGSPOUT: ignore  # don't send Kibana's logs to Logspout
+    links:
+      - elasticsearch
+    depends_on:
+      - elasticsearch
+    volumes:
+      - ./config/kibana/kibana.yml:/usr/share/kibana/config/kibana.yml:ro
+
+  # Logspout to collect container logs
+  logspout:
+    image: gliderlabs/logspout:${LOGSPOUT_VER}
+    restart: always
+    expose:
+      - "5000/udp"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    command: syslog://logstash:5000
+    links:
+      - logstash
+    depends_on:
+      - logstash
+
+  # Logstash log ingestion
+  logstash:
+    image: docker.elastic.co/logstash/logstash:${ELASTIC_VER}
+    restart: always
+    command: logstash -f /usr/share/logstash/pipeline --config.reload.automatic
+    volumes:
+      - ./config/logstash/config:/usr/share/logstash/config:ro
+      - ./config/logstash/patterns:/usr/share/logstash/patterns:ro
+      - ./config/logstash/pipeline:/usr/share/logstash/pipeline:ro
+    ports:
+      - 5400:5400
+    links:
+      - elasticsearch
+      - rabbit
+    depends_on:
+      - elasticsearch
+      - rabbit
+
+  # # MongoDB storage backend
+  # mongo:
+  #   image: mongo:${MONGODB_VER}
+  #   restart: always
+
+  # Nginx web server
+  nginx:
+    image: nginx:${NGINX_VER}
+    restart: always
+    volumes:
+      - ./config/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config/nginx/ssl.crt:/etc/nginx/ssl.crt:ro
+      - ./config/nginx/ssl.key:/etc/nginx/ssl.key:ro
+      - /www/static
+    volumes_from:
+      - cyphon
+    links:
+      - cyphon
+      - kibana
+      - rabbit
+    depends_on:
+      - cyphon
+
+  # PostgreSQL PostGIS database for Cyphon
+  postgres:
+    image: mdillon/postgis:${POSTGRES_VER}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+    restart: always
+    env_file:
+      - ./config/env/cyphon.env
+
+  # RabbitMQ message broker for Cyphon and Logstash
+  rabbit:
+    image: rabbitmq:${RABBITMQ_VER}
+    restart: always
+    env_file:
+      - ./config/env/cyphon.env
+
+  # RabbitMQ queue consumer for Cyphon
+  logchutes:
+    extends:
+      file: common-services.yml
+      service: cyphon-prod
+    restart: always
+    command: ../entrypoints/run_receiver.sh logchutes
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      # - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
+
+  watchdogs:
+    extends:
+      file: common-services.yml
+      service: cyphon-prod
+    restart: always
+    command: ../entrypoints/run_receiver.sh watchdogs
+    volumes_from:
+      - geoip
+    links:
+      - elasticsearch
+      # - mongo
+      - postgres
+      - rabbit
+    depends_on:
+      - cyphon
+      - rabbit
