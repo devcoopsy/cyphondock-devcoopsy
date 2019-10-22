@@ -50,8 +50,7 @@ services:
       # - mongo
       - postgres
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
 
   # Elasticsearch storage backend
   elasticsearch:
