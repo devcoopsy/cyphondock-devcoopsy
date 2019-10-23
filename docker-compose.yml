@@ -59,6 +59,8 @@ services:
     environment:
       - http.host=0.0.0.0
       - transport.host=127.0.0.1
+    ports:
+      - 9200:9200
     volumes:
       - ./config/elasticsearch/elasticsearch.yml:/usr/share/elasticsearch/config/elasticsearch.yml:ro
       - ./config/elasticsearch/jvm.options:/usr/share/elasticsearch/config/jvm.options:ro
