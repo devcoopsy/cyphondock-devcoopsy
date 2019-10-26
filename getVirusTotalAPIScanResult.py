@@ -19,7 +19,7 @@ def scan_file():
     api_url = 'https://www.virustotal.com/vtapi/v2/file/scan'
     params = {'apikey': api_token}
 
-    files = {'file': ('/Users/tome.kirov/Desktop/test.txt', open('/test.txt', 'rb'))}
+    files = {'file': ('/test.txt', open('/test.txt', 'rb'))}
     response = requests.post(api_url, files=files, params=params)
 
     return (response.json()['sha256'])
